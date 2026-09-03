@@ -1,15 +1,18 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Param,
-  Query,
-  Body,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Query, Body, UseGuards, UsePipes } from '@nestjs/common';
 import { ContactsService } from './contacts.service.js';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { z } from 'zod';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
+
+const createContactSchema = z.object({
+  name: z.string().min(1).max(255),
+  phoneE164: z.string().max(20).optional(),
+  email: z.string().email().max(255).optional().or(z.literal('')),
+  document: z.string().max(32).optional(),
+  customFields: z.record(z.unknown()).optional(),
+});
+
+const updateContactSchema = createContactSchema.partial();
 
 @Controller('contacts')
 @UseGuards(AuthGuard)
@@ -27,31 +30,16 @@ export class ContactsController {
   }
 
   @Post()
-  async create(
-    @Body()
-    body: {
-      name: string;
-      phoneE164?: string;
-      email?: string;
-      document?: string;
-      customFields?: Record<string, unknown>;
-    },
-  ) {
-    return this.contactsService.create(body);
+  @UsePipes(new ZodValidationPipe(createContactSchema))
+  async create(@Body() body: z.infer<typeof createContactSchema>) {
+    const validBody = { ...body, email: body.email === '' ? undefined : body.email };
+    return this.contactsService.create(validBody);
   }
 
   @Put(':id')
-  async update(
-    @Param('id') id: string,
-    @Body()
-    body: {
-      name?: string;
-      phoneE164?: string;
-      email?: string;
-      document?: string;
-      customFields?: Record<string, unknown>;
-    },
-  ) {
-    return this.contactsService.update(id, body);
+  @UsePipes(new ZodValidationPipe(updateContactSchema))
+  async update(@Param('id') id: string, @Body() body: z.infer<typeof updateContactSchema>) {
+    const validBody = { ...body, email: body.email === '' ? undefined : body.email };
+    return this.contactsService.update(id, validBody);
   }
 }

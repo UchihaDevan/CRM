@@ -21,7 +21,8 @@ export class AuthGuard implements CanActivate {
       const tenantIdHeader = request.headers['x-tenant-id'];
       if (tenantIdHeader) {
         const tenantId = Array.isArray(tenantIdHeader) ? tenantIdHeader[0] : tenantIdHeader;
-        tenantStorage.enterWith({ tenantId });
+        const store = tenantStorage.getStore();
+        if (store) store.tenantId = tenantId;
         return true;
       }
       throw new UnauthorizedException('Token de autenticação não fornecido.');
@@ -30,11 +31,12 @@ export class AuthGuard implements CanActivate {
     const token = authHeader.split(' ')[1];
     try {
       const payload = await this.jwtService.verifyAsync(token);
-      tenantStorage.enterWith({
-        tenantId: payload.tenantId,
-        userId: payload.sub,
-        role: payload.role,
-      });
+      const store = tenantStorage.getStore();
+      if (store) {
+        store.tenantId = payload.tenantId;
+        store.userId = payload.sub;
+        store.role = payload.role;
+      }
       return true;
     } catch {
       throw new UnauthorizedException('Token inválido ou expirado.');

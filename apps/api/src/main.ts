@@ -12,11 +12,8 @@ async function bootstrap() {
     const tenantIdHeader = req.headers['x-tenant-id'];
     const tenantId = Array.isArray(tenantIdHeader) ? tenantIdHeader[0] : tenantIdHeader;
 
-    if (tenantId) {
-      tenantStorage.run({ tenantId }, () => done());
-    } else {
-      done();
-    }
+    // SEMPRE envolver em run() para que o AuthGuard possa apenas mutar o store existente.
+    tenantStorage.run({ tenantId: tenantId || '' }, () => done());
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(

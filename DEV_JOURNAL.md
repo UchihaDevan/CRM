@@ -76,3 +76,27 @@
 
 ---
 *(Este arquivo será atualizado a cada nova funcionalidade implementada, teste executado ou erro encontrado)*
+
+## Sessão 05: Auditoria Técnica e Correção de Riscos Críticos
+**Data:** 02 de Setembro de 2026
+
+**O que foi feito:**
+1. Realizada uma auditoria técnica profunda de todo o monorepo (44 arquivos) que resultou no documento `auditoria_tecnica.md` com 16 achados documentados.
+2. Corrigido **C1 (Crítico):** Alteração no hook Fastify do `main.ts` para sempre aplicar `tenantStorage.run()` e modificação do `AuthGuard` para apenas mutar o `store` existente em vez de usar `enterWith()`, prevenindo vazamento de contexto entre tenants.
+3. Corrigido **C2 (Crítico):** A rota de registro de Tenant foi refatorada. Toda verificação (e-mail, slug) passou para dentro de uma única transação e tratamos falhas de restrição única (erro 23505) adequadamente.
+4. Corrigido **C3 (Crítico):** Nenhum payload da API era validado de verdade, permitindo tipos incorretos. Criado um `ZodValidationPipe` universal para o NestJS e aplicados schemas `zod` em todos os quatro controllers (`Auth`, `Contacts`, `Deals`, `Pipelines`).
+5. Corrigido **A3 (Alto):** Adicionado `FORCE ROW LEVEL SECURITY` para todas as tabelas em `0000_enable_rls.sql`, protegendo o banco caso o owner rode as migrations sem permissões corretas.
+6. Corrigido **A6 (Alto):** Rodei `pnpm approve-builds` para permitir a compilação nativa do módulo `bcrypt`, que poderia crachar o servidor em produção.
+
+**O que deu certo:**
+- A implementação com Zod + Pipe customizado não exigiu a troca do Fastify, mantendo a performance super rápida, sem inflar dependências adicionais com class-validator/class-transformer.
+- A refatoração do `main.ts` com ALS corrigiu totalmente o potencial de *memory leak* e dados expostos.
+- O build completo do Turborepo (NestJS TS) continua rápido (~4.6s) mesmo com validações pesadas em todos os controllers.
+
+**O que deu errado/Dificuldades:**
+- A compilação do `bcrypt` precisou de intervenção via shell para rodar `pnpm approve-builds` que travava em prompt interativo. Foi contornado enviando os inputs.
+
+**Próximos passos possíveis:**
+- Corrigir a falta de paginação e o filtro ausente do board Kanban (`M1`).
+- Mudar para "type": "module" nas dependências internas ou deixar como CommonJS oficial.
+- Iniciar o frontend (App/Web).

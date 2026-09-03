@@ -21,57 +21,45 @@ export class AuthService {
     email: string;
     password: string;
   }) {
-    // 1. Validar se usuário ou slug já existem
-    const existingUser = await this.dbService.rawDb
-      .select()
-      .from(users)
-      .where(eq(users.email, data.email))
-      .limit(1);
-
-    if (existingUser.length > 0) {
-      throw new ConflictException('E-mail já cadastrado.');
-    }
-
-    const existingSlug = await this.dbService.rawDb
-      .select()
-      .from(tenants)
-      .where(eq(tenants.slug, data.slug))
-      .limit(1);
-
-    if (existingSlug.length > 0) {
-      throw new ConflictException('Slug de organização já em uso.');
-    }
-
     const passwordHash = await bcrypt.hash(data.password, 10);
 
-    // 2. Criar Tenant, Usuário e Vincular como OWNER
-    const result = await this.dbService.rawDb.transaction(async (tx) => {
-      const [newTenant] = await tx
-        .insert(tenants)
-        .values({
+    // 1. Criar Tenant, Usuário e Vincular como OWNER dentro de transação para evitar Race Conditions
+    let result;
+    try {
+      result = await this.dbService.rawDb.transaction(async (tx) => {
+        const existingUser = await tx.select().from(users).where(eq(users.email, data.email)).limit(1);
+        if (existingUser.length > 0) throw new ConflictException('E-mail já cadastrado.');
+
+        const existingSlug = await tx.select().from(tenants).where(eq(tenants.slug, data.slug)).limit(1);
+        if (existingSlug.length > 0) throw new ConflictException('Slug de organização já em uso.');
+
+        const [newTenant] = await tx.insert(tenants).values({
           name: data.tenantName,
           slug: data.slug,
           nicheTemplate: data.nicheTemplate || 'GENERIC',
-        })
-        .returning();
+        }).returning();
 
-      const [newUser] = await tx
-        .insert(users)
-        .values({
+        const [newUser] = await tx.insert(users).values({
           name: data.userName,
           email: data.email,
           passwordHash,
-        })
-        .returning();
+        }).returning();
 
-      await tx.insert(tenantUsers).values({
-        tenantId: newTenant.id,
-        userId: newUser.id,
-        role: UserRole.OWNER,
+        await tx.insert(tenantUsers).values({
+          tenantId: newTenant.id,
+          userId: newUser.id,
+          role: UserRole.OWNER,
+        });
+
+        return { tenant: newTenant, user: newUser };
       });
-
-      return { tenant: newTenant, user: newUser };
-    });
+    } catch (e: any) {
+      // 23505 = unique_violation no PostgreSQL
+      if (e.code === '23505') {
+        throw new ConflictException('E-mail ou slug já estão em uso.');
+      }
+      throw e;
+    }
 
     const token = this.jwtService.sign({
       sub: result.user.id,
