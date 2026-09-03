@@ -46,25 +46,33 @@
 
 ---
 
-## Registro 03 - 02/09/2026 - Kickoff da Fase 1: Setup & Modelagem
+## Registro 04 - 02/09/2026 - Construção da API NestJS com Fastify Adapter & AsyncLocalStorage
 
 ### 🎯 Objetivo da Etapa
-* Configurar o ambiente do projeto (estrutura de monorepo com Turborepo e pnpm workspaces).
-* Modelar os Schemas do Drizzle ORM para PostgreSQL 16 com isolamento RLS e entidades comerciais desacopladas.
-* Compilar pacotes `@crm/shared` e `@crm/database` e gerar migrações SQL.
+* Construir a API REST em `apps/api` usando NestJS e Fastify Adapter de alta performance.
+* Implementar o isolamento multi-tenant via `AsyncLocalStorage` (ALS) sem o overhead de controllers `Scope.REQUEST`.
+* Criar os módulos de Autenticação (JWT + RBAC), Contatos (Busca + E.164 + Custom Fields), Pipelines (Multi-funis + Estágios) e Deals (Visão Kanban + Rastreamento de Tráfego).
 
 ### ✅ O que deu certo
-* **Monorepo Inicializado:** Turborepo + pnpm workspaces configurado com TypeScript Strict Mode.
-* **Pacote Compartilhado (`@crm/shared`):** Enums (`UserRole`, `DealStatus`, `OrderStatus`, `NicheTemplate`) e tipos de tracking (`TrackingParams`, `PostbackPayload`) compilados com sucesso via `tsc`.
-* **Pacote de Banco (`@crm/database`):**
-  * Schemas Drizzle ORM modelados e desacoplados para 11 tabelas (`tenants`, `users`, `tenant_users`, `contacts`, `pipelines`, `pipeline_stages`, `deals`, `deal_tracking`, `products`, `orders`, `order_items`).
-  * Helper `withTenantContext` implementado usando transações com `set_config('app.current_tenant_id', tenantId, true)`.
-  * Script SQL de migração RLS criado com políticas `USING` e `WITH CHECK`.
-  * Migrações SQL geradas com sucesso via `drizzle-kit generate` (`0000_light_bruce_banner.sql`).
-* **Compilação 100% Type-Safe:** `pnpm run build` executou e validou todos os pacotes em 2.4s.
+* **AsyncLocalStorage Tenant Storage:** Contexto de Tenant e Usuário encapsulado de forma transparente no ciclo de vida de cada requisição Fastify via hook `onRequest`.
+* **DatabaseService Transacional com RLS:** Execução de todas as queries de negócio encapsuladas com `withTenantContext(tenantId, tx)` aplicando RLS no PostgreSQL.
+* **Módulo de Autenticação (`AuthModule`):**
+  * `POST /auth/register`: Registro atômico de Tenant (com slug único), Usuário (com hash bcrypt) e vínculo `OWNER` em `tenant_users`.
+  * `POST /auth/login`: Autenticação e emissão de JWT contendo `tenantId`, `userId` e `role`.
+  * `AuthGuard`: Validação de Bearer Token JWT com injeção automática no ALS (com suporte a fallback `x-tenant-id` para webhooks/dev).
+* **Módulo de Contatos (`ContactsModule`):**
+  * `GET /contacts` com busca textual inteligente (`name`, `email`, `phoneE164`, `document`).
+  * `POST /contacts` e `PUT /contacts/:id` com suporte a `custom_fields` JSONB e rastreamento de última interação (`lastInboundInteractionAt`).
+* **Módulo de Pipelines & Deals (`PipelinesModule` & `DealsModule`):**
+  * `GET /pipelines`: Listagem hierárquica de funis com seus respectivos estágios ordenados.
+  * `POST /pipelines`: Criação de novo funil com geração automática dos 4 estágios padrão.
+  * `GET /deals/kanban?pipelineId=...`: Agrupamento em colunas/estágios com cálculo de métricas (`totalDeals`, `totalValueCents`), inner join com contatos e left join com `deal_tracking` (UTMs, `gclid`, `fbclid`, `ttclid`).
+  * `PUT /deals/:id/stage` e `PUT /deals/:id/status`: Transição de estágios e fechamento (`OPEN`, `WON`, `LOST`).
+* **Compilação Monorepo 100% Type-Safe:** `pnpm run build` bem-sucedido em todos os 3 pacotes (`@crm/shared`, `@crm/database`, `@crm/api`).
 
 ### ⚠️ O que deu errado / Incidentes
-* **Sandbox Network Limit na primeira execução:** O `pnpm install` falhou inicialmente no modo sandbox sem rede (retornou `ENOTFOUND` para o registry npm). Resolvido executando com permissão de rede (`BypassSandbox: true`), instalando 45 pacotes em 3.5s.
+* **TypeScript TS2742 no `DatabaseService`:** O compilador alertou sobre inferência não portátil do tipo `rawDb`.
+  * **Solução:** Exportado `export type AppDatabase = typeof db` em `@crm/database` e anotado explicitamente o getter `get rawDb(): AppDatabase` no serviço.
 
 ---
 *(Este arquivo será atualizado a cada nova funcionalidade implementada, teste executado ou erro encontrado)*
